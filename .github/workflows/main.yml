@@ -1,0 +1,332 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
+import { BookOpen, Scale, Trash2, LogOut, Plus, Search, FileText, Tag, Award, Gavel } from 'lucide-react';
+
+// ==========================================
+// CONFIGURAÇÃO DO BANCO DE DADOS E AUTENTICAÇÃO
+// ==========================================
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'marcos-cruz-santos-direito-juridico';
+
+// ==========================================
+// COMPONENTE DE AUTENTICAÇÃO (LOGIN)
+// ==========================================
+function AuthScreen({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setTimeout(() => {
+      onLogin();
+    }, 800);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <div className="flex justify-center mb-4">
+          <div className="bg-indigo-700 p-4 rounded-2xl shadow-xl shadow-indigo-100">
+            <Gavel className="h-12 w-12 text-white" />
+          </div>
+        </div>
+        <h2 className="text-center text-3xl font-extrabold text-slate-900 leading-tight">
+          Projeto Direito
+          <span className="block mt-1 text-lg font-medium text-indigo-600">Marcos Cruz Santos</span>
+        </h2>
+        <p className="mt-3 text-center text-sm text-slate-500 max-w-xs mx-auto">
+          Sistema de Gestão de Conhecimento Jurídico para Projetos de Extensão
+        </p>
+      </div>
+
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow-2xl sm:rounded-3xl sm:px-10 border border-slate-100">
+          <form className="space-y-5" onSubmit={handleAuth}>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Prontuário / Email Acadêmico</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full px-4 py-3 border border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-sm"
+                placeholder="nome@aluno.unip.br"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Senha de Acesso</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full px-4 py-3 border border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-sm"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none transition-all disabled:opacity-70 active:scale-[0.98]"
+            >
+              {isLoading ? 'Validando Credenciais...' : 'Entrar no Sistema'}
+            </button>
+          </form>
+        </div>
+        
+        <div className="mt-8 flex items-center justify-center gap-2 text-slate-400">
+          <Award className="h-4 w-4" />
+          <span className="text-[10px] uppercase tracking-[0.2em] font-bold">UNIP - Curso de Direito</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE PRINCIPAL (DASHBOARD)
+// ==========================================
+function Dashboard({ user, onLogout }) {
+  const [conteudos, setConteudos] = useState([]);
+  const [titulo, setTitulo] = useState('');
+  const [categoria, setCategoria] = useState('');
+  const [texto, setTexto] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    const conteudosRef = collection(db, 'artifacts', appId, 'users', user.uid, 'conteudos');
+    const unsubscribe = onSnapshot(conteudosRef, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      data.sort((a, b) => b.createdAt - a.createdAt);
+      setConteudos(data);
+    }, (err) => console.error(err));
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!titulo.trim() || !texto.trim() || !categoria.trim()) return;
+    setIsSaving(true);
+    try {
+      const conteudosRef = collection(db, 'artifacts', appId, 'users', user.uid, 'conteudos');
+      await addDoc(conteudosRef, { titulo, categoria, texto, createdAt: Date.now() });
+      setTitulo(''); setCategoria(''); setTexto('');
+    } catch (err) { console.error(err); } finally { setIsSaving(false); }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'conteudos', id));
+    } catch (err) { console.error(err); }
+  };
+
+  const filtered = conteudos.filter(c => 
+    c.titulo.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.categoria.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-900">
+      {/* NAVBAR ACADÊMICA */}
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-20 items-center">
+            <div className="flex items-center gap-4">
+              <div className="bg-indigo-600 p-2.5 rounded-lg">
+                <Scale className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-slate-900 tracking-tight">Projeto Direito</h1>
+                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Marcos Cruz Santos</p>
+              </div>
+            </div>
+            <button onClick={onLogout} className="group flex items-center gap-2 text-slate-500 hover:text-red-600 font-semibold text-sm transition-colors">
+              <LogOut className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              Encerrar Sessão
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col lg:flex-row gap-10">
+        
+        {/* FORMULÁRIO DE INSERÇÃO */}
+        <aside className="w-full lg:w-[380px] shrink-0">
+          <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100 p-8 sticky top-28">
+            <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-800">
+              <Plus className="h-5 w-5 text-indigo-600" />
+              Novo Registro
+            </h2>
+
+            <form onSubmit={handleAdd} className="space-y-5">
+              <div>
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">Título da Peça ou Estudo</label>
+                <input
+                  type="text"
+                  value={titulo}
+                  onChange={(e) => setTitulo(e.target.value)}
+                  placeholder="Ex: Habeas Corpus Preventivo"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">Área do Direito</label>
+                <input
+                  type="text"
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  placeholder="Ex: Direito Processual Penal"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1.5 block">Fundamentação / Notas</label>
+                <textarea
+                  value={texto}
+                  onChange={(e) => setTexto(e.target.value)}
+                  placeholder="Insira o resumo doutrinário ou o texto da peça..."
+                  rows="6"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm resize-none"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="w-full bg-slate-900 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              >
+                {isSaving ? 'Gravando...' : 'Salvar no Acervo'}
+              </button>
+            </form>
+          </div>
+        </aside>
+
+        {/* LISTAGEM E BUSCA */}
+        <section className="flex-1">
+          <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Acervo de Extensão</h2>
+              <p className="text-sm text-slate-500">Documentação organizada para fins acadêmicos e de pesquisa.</p>
+            </div>
+            
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Pesquisar registros..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl w-full md:w-72 shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm"
+              />
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 py-24 flex flex-col items-center">
+              <div className="bg-slate-50 p-6 rounded-full mb-4">
+                <BookOpen className="h-10 w-10 text-slate-300" />
+              </div>
+              <p className="text-slate-400 font-semibold">Nenhum registro encontrado no acervo.</p>
+            </div>
+          ) : (
+            <div className="grid gap-6">
+              {filtered.map((item) => (
+                <div key={item.id} className="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm hover:shadow-xl hover:shadow-slate-200/40 transition-all group relative">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                        <FileText className="h-5 w-5 text-indigo-600" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{item.categoria}</span>
+                        <h3 className="text-lg font-bold text-slate-900">{item.titulo}</h3>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100/50">
+                    <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
+                      {item.texto}
+                    </p>
+                  </div>
+                  
+                  <div className="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-1.5 w-1.5 rounded-full bg-green-500"></div>
+                      Autenticado por Marcos Santos
+                    </div>
+                    <span>Registrado em {new Date(item.createdAt).toLocaleDateString('pt-BR')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+
+      <footer className="py-12 border-t border-slate-200 mt-10">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.3em]">
+            © 2024 Projeto de Extensão Acadêmica em Direito - Marcos Cruz Santos
+          </p>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE RAIZ
+// ==========================================
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setIsInitializing(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const login = async () => {
+    try {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  if (isInitializing) return (
+    <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
+    </div>
+  );
+
+  return user ? <Dashboard user={user} onLogout={() => signOut(auth)} /> : <AuthScreen onLogin={login} />;
+}
